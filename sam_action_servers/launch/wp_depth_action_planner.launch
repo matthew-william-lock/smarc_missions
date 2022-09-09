@@ -24,6 +24,7 @@
     <arg name="roll_setpoint_topic" default="/$(arg robot_name)/ctrl/roll_setpoint" />
     <arg name="yaw_feedback_topic" default="/$(arg robot_name)/dr/yaw" />
 	<arg name="vel_feedback_topic" default="/$(arg robot_name)/dr/u" />
+	<arg name="gps_topic" default="/$(arg robot_name)/core/gps" />
 	<!--arg name="yaw_feedback_topic" default="/$(arg robot_name)/ctrl/odom_listener/yaw_feedback" /-->
 
 	<!-- Services -->
@@ -46,6 +47,9 @@
         	<param name="rpm2_cmd_topic" value="$(arg as_rpm2_topic)" />
 		<param name="heading_setpoint_topic" value="$(arg heading_setpoint_topic)" />
 		<param name="depth_setpoint_topic" value="$(arg depth_setpoint_topic)" />
+
+		<!-- Positional information -->
+		<param name="gps_topic" value="$(arg gps_topic)" />
 		
 		<!--Turbo turn parameters-->
   		<param name="turbo_turn_flag" value="False" />

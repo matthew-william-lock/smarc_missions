@@ -13,6 +13,7 @@
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from __future__ import division, print_function
+import xdrlib
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,6 +22,7 @@ from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped, PointStamped
 #from move_base_msgs.msg import MoveBaseFeedback, MoveBaseResult, MoveBaseAction
 from smarc_msgs.msg import GotoWaypointActionFeedback, GotoWaypointResult, GotoWaypointAction, GotoWaypointGoal
+from sensor_msgs.msg import NavSatFix
 import actionlib
 import rospy
 import tf
@@ -33,6 +35,7 @@ from visualization_msgs.msg import Marker
 from tf.transformations import quaternion_from_euler
 from toggle_controller import ToggleController  
 import time   
+from geodesy import utm
 
 from ddynamic_reconfigure_python.ddynamic_reconfigure import DDynamicReconfigure
 
@@ -82,6 +85,17 @@ class WPDepthPlanner(object):
 
     def vel_feedback_cb(self,vel_feedback):
         self.vel_feedback= vel_feedback.data
+
+    def gps_callback(self, gps_msg):
+        if gps_msg.status == -1:
+            return
+        try:
+            utm_point = utm.fromLatLong(gps_msg.latitude, gps_msg.longitude)
+        except ValueError:
+            return
+
+        self.x = utm_point.easting
+        self.y = utm_point.northing
 
     def angle_wrap(self,angle):
         if(abs(angle)>3.141516):
@@ -271,6 +285,7 @@ class WPDepthPlanner(object):
         goal_point.point.x = self.nav_goal.position.x
         goal_point.point.y = self.nav_goal.position.y
         goal_point.point.z = self.nav_goal.position.z
+
         try:
             goal_point_local = self.listener.transformPoint(self.nav_goal_frame, goal_point)
             self.nav_goal.position.x = goal_point_local.point.x
@@ -301,6 +316,10 @@ class WPDepthPlanner(object):
             if counter % 5 == 0:
                 try:
                     (trans, rot) = self.listener.lookupTransform(self.nav_goal_frame, self.base_frame, rospy.Time(0))
+
+                    trans[0] = self.x # Use GPS instead of DR (quickfix)
+                    trans[1] = self.y # Use GPS instead of DR (quickfix)
+
                 except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                     rospy.loginfo("Error with tf:"+str(self.nav_goal_frame) + " to "+str(self.base_frame))
                     continue
@@ -473,6 +492,9 @@ class WPDepthPlanner(object):
         self.turbo_turn_rpm = rospy.get_param('~turbo_turn_rpm', 1000)
         vbs_setpoint_topic = rospy.get_param('~vbs_setpoint_topic', '/sam/ctrl/vbs/setpoint')
 
+        # GPS position
+        gps_topic = rospy.get_param('~gps_topic', '/sam/core/gps')
+
 
 	    #related to velocity regulation instead of rpm
         self.vel_ctrl_flag = rospy.get_param('~vel_ctrl_flag', False)
@@ -511,6 +533,11 @@ class WPDepthPlanner(object):
         self.vel_feedback = 0.0
         rospy.Subscriber(vel_feedback_topic, Float64, self.vel_feedback_cb)
 
+        # Subscrip to GPS 
+        self.y  = 0,0 
+        self.x = 0,0
+        rospy.Subscriber(gps_topic, NavSatFix, self.gps_callback)
+        
         self.rpm1_pub = rospy.Publisher(rpm1_cmd_topic, ThrusterRPM, queue_size=10)
         self.rpm2_pub = rospy.Publisher(rpm2_cmd_topic, ThrusterRPM, queue_size=10)
         self.rpm_enable_pub = rospy.Publisher(rpm_enable_topic, Bool, queue_size=10)
